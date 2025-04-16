@@ -1,0 +1,116 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUserAuthenticated(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Only allow users to read their own data, or admins to read any user data
+      allow get: if isUserAuthenticated(userId) || isAdmin();
+      
+      // Allow reading user data by referral code for validation - even without authentication
+      allow list: if request.query.where.referralCode != null;
+      
+      // Admin can list all users (made more specific)
+      allow list: if isAdmin() &&
+                    !('referralCode' in request.query.where);
+      
+      // Users can create their own document with their UID - more permissive now
+      allow create: if isAuthenticated() && userId == request.auth.uid;
+      
+      // Users can update their own document - more permissive since no profile completion
+      allow update: if isUserAuthenticated(userId) &&
+                      !isFieldChanged('uid'); // Only restrict changing UID
+      
+      // Only allow deletion by admin
+      allow delete: if isAdmin();
+      
+      // Helper functions for user document validation
+      function incomingData() {
+        return request.resource.data;
+      }
+      
+      function existingData() {
+        return resource.data;
+      }
+      
+      function isFieldChanged(field) {
+        return incomingData()[field] != existingData()[field];
+      }
+    }
+    
+    // Pending referrals collection (even more permissive rules)
+    match /pending_referrals/{pendingId} {
+      // Any user can create a pending referral, even without authentication
+      allow create: if request.resource.data.keys().hasAll(['userId', 'referralCode']);
+      
+      // Users can read their own pending referrals
+      allow get, list: if isAuthenticated() && 
+                          resource.data.userId == request.auth.uid;
+                          
+      // Admins can read and update all pending referrals
+      allow get, list, update, delete: if isAdmin();
+      
+      function incomingData() {
+        return request.resource.data;
+      }
+    }
+    
+    // Transactions collection
+    match /transactions/{transactionId} {
+      // Users can read their own transactions
+      allow get, list: if isUserAuthenticated(resource.data.userId) || isAdmin();
+      
+      // New transactions can be created through server functions or client app
+      // More permissive to allow more transaction types
+      allow create: if isUserAuthenticated(request.resource.data.userId);
+      
+      // No direct updates to transactions
+      allow update, delete: if isAdmin();
+    }
+    
+    // Withdrawal requests collection
+    match /withdrawal_requests/{requestId} {
+      // Users can read their own withdrawal requests
+      allow get, list: if isUserAuthenticated(resource.data.userId) || isAdmin();
+      
+      // Users can create withdrawal requests for themselves
+      allow create: if isUserAuthenticated(request.resource.data.userId) &&
+                      request.resource.data.status == 'pending';
+      
+      // No direct updates to withdrawal requests by users
+      allow update, delete: if isAdmin();
+    }
+    
+    // Questions collection for quiz games
+    match /questions/{questionId} {
+      // All authenticated users can read questions
+      allow get, list: if isAuthenticated();
+      
+      // Only admins can modify questions
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Admin users collection
+    match /admin_users/{userId} {
+      // Only allow admins to read the admin users collection
+      allow get, list: if isAdmin();
+      
+      // Only allow admins to modify the admin users collection
+      allow create, update, delete: if isAdmin();
+    }
+  }
+} 

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "908754380268",
+    "project_id": "pocketpayout-bb825",
+    "storage_bucket": "pocketpayout-bb825.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:908754380268:android:1509b0a522da527df40cc9",
+        "android_client_info": {
+          "package_name": "com.example.pocket_payout_bd"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "908754380268-5umou0vg3an4emg72gercqek2r15i08p.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.pocket_payout_bd",
+            "certificate_hash": "7507285ee1a12cf8ae174c4e617b17503f86d9bf"
+          }
+        },
+        {
+          "client_id": "908754380268-k7h7ob927l1oug5jbeos3urmbqpgsrvu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9T8jaLZbV943CP6PANLzYi8Mwy6QozGw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "908754380268-k7h7ob927l1oug5jbeos3urmbqpgsrvu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

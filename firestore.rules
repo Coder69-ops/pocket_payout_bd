@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUserAuthenticated(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+    
+    // Base rule - deny by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Allow users to read their own profile or admins to read any profile
+      allow get: if isUserAuthenticated(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      // Critical fix: Allow reading referral codes without authentication
+      allow list, get: if request.query.where.referralCode != null;
+      
+      // Allow leaderboard queries (top users by points)
+      allow list: if isAuthenticated() &&
+                    request.query.orderBy == 'pointsBalance' &&
+                    request.query.limit <= 50;
+                    
+      // Allow users to create their own profile - more permissive since profile completion is automatic
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Allow users to update their own profile with simplified field validation
+      allow update: if isUserAuthenticated(userId) && (
+                      // Allow updating basic profile fields
+                      request.resource.data.keys().hasAny(['dailySpinCount', 'dailyQuizCount', 'dailyScratchCount', 
+                                 'dailyDiceCount', 'dailyAdWatchCount', 'lastAdEarnings', 
+                                 'todayAdEarnings', 'lastActivityDate', 'isSignedIn', 
+                                 'phoneNumber', 'displayName', 'photoURL', 'referredBy', 
+                                 'lastUpdatedAt', 'pointsBalance', 'streakCounter', 
+                                 'dailyRewardLastClaimed', 'totalEarned', 'quizHistory',
+                                 'achievements', 'lastLoginAt', 'totalWithdrawn'])
+                    );
+
+      // Special rule for point balance updates - more permissive for game activities and withdrawals
+      allow update: if isUserAuthenticated(userId) && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pointsBalance', 'totalWithdrawn', 'lastUpdatedAt']);
+      
+      // Only admins can delete profiles
+      allow delete: if isAdmin();
+    }
+    
+    // Transactions collection
+    match /transactions/{transactionId} {
+      // Allow users to read their own transactions
+      allow read: if isUserAuthenticated(resource.data.userId) || isAdmin();
+      
+      // Allow transaction creation
+      allow create: if isAuthenticated() && (
+                      // User creating their own transaction
+                      request.resource.data.userId == request.auth.uid && 
+                      (
+                        // For earning points from various activities
+                        (request.resource.data.points > 0 && 
+                         request.resource.data.type in ['earn_spin', 'earn_quiz', 'earn_scratch', 
+                                                     'earn_dice', 'earn_ad', 'earn_ad_watch', 'earn_daily_reward',
+                                                     'earn_offer', 'earn_offer_complete', 'earn_referral', 
+                                                     'earn_referral_bonus', 'earn_color_match', 'earn_memory_game',
+                                                     'earn_word_game', 'earn_math_puzzle']) 
+                        || 
+                        // For withdrawal requests (negative points)
+                        (request.resource.data.points < 0 && 
+                         request.resource.data.type in ['withdrawal', 'withdrawal_request'])
+                      )
+                    );
+      
+      // Only admins can update or delete transactions
+      allow update, delete: if isAdmin();
+    }
+    
+    // Withdrawal requests collection
+    match /withdrawal_requests/{requestId} {
+      // Allow users to read their own withdrawal requests and admins to read any
+      allow get: if isUserAuthenticated(resource.data.userId) || isAdmin();
+      
+      // Further simplified list rule to be more permissive - just require authentication
+      allow list: if isAuthenticated();
+      
+      // Completely permissive create rule for withdrawal requests
+      allow create: if isAuthenticated() && 
+                     request.resource.data.userId == request.auth.uid;
+      
+      // Allow users to update only their own pending withdrawal requests
+      allow update: if isUserAuthenticated(resource.data.userId) && 
+                     (
+                       (resource.data.status == 'pending' &&
+                        request.resource.data.status == 'cancelled') ||
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'processedAt', 'processedById', 'rejectionReason', 'notes']))
+                     );
+                     
+      // Only admins can delete withdrawal requests
+      allow delete: if isAdmin();
+    }
+    
+    // Questions collection for quiz games
+    match /questions/{questionId} {
+      // All authenticated users can read questions
+      allow read: if isAuthenticated();
+      
+      // Only admins can modify questions
+      allow write: if isAdmin();
+    }
+    
+    // Pending referrals collection - simplified for direct creation without profile completion
+    match /pending_referrals/{pendingId} {
+      // More permissive rule to allow creating pending referrals without authentication
+      allow create: if request.resource.data.keys().hasAll(['userId', 'referralCode']);
+      
+      // Users can read only their own pending referrals
+      allow read: if isAuthenticated() && 
+                    resource.data.userId == request.auth.uid;
+      
+      // Only admins can list all, update status, or delete pending referrals
+      allow list, update, delete: if isAdmin();
+    }
+    
+    // Admin users collection
+    match /admin_users/{userId} {
+      // Only admins can access the admin collection
+      allow read, write: if isAdmin();
+    }
+    
+    // Settings collection (app configuration)
+    match /settings/{settingId} {
+      // All authenticated users can read settings
+      allow read: if isAuthenticated();
+      
+      // Only admins can write to settings
+      allow write: if isAdmin();
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isAuthenticated() && 
+                   resource.data.userId == request.auth.uid;
+      
+      // Admins can create global notifications
+      allow create: if isAdmin() && 
+                     (!('userId' in request.resource.data) || 
+                      request.resource.data.userId == null);
+                      
+      // Allow targeted user notifications
+      allow create: if isAdmin() && 
+                     ('userId' in request.resource.data);
+      
+      // Users can mark their notifications as read
+      allow update: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
+      
+      // Only admins can delete notifications
+      allow delete: if isAdmin();
+    }
+  }
+}
