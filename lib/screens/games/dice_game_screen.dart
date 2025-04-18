@@ -4,8 +4,9 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:pocket_payout_bd/providers/user_provider.dart';
 import 'package:pocket_payout_bd/services/firestore_service.dart';
-import 'package:confetti/confetti.dart';
-import 'package:flutter/foundation.dart';
+import 'package:pocket_payout_bd/services/ad_service.dart';
+import 'package:pocket_payout_bd/utils/constants.dart';
+import 'package:pocket_payout_bd/widgets/banner_ad_widget.dart';
 
 class DiceGameScreen extends StatefulWidget {
   const DiceGameScreen({Key? key}) : super(key: key);
@@ -16,17 +17,14 @@ class DiceGameScreen extends StatefulWidget {
 
 class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProviderStateMixin {
   final FirestoreService _firestoreService = FirestoreService();
+  final AdService _adService = AdService();
   final Random _random = Random();
   
   // Animation controller for dice roll
   late AnimationController _controller;
-  late Animation<double> _bounceAnimation;
-  late Animation<double> _rotationAnimation;
-  late ConfettiController _confettiController;
   
   // Game state variables
   bool _isLoading = false;
-  bool _isAdLoading = false;
   bool _isRolling = false;
   bool _canPlay = true;
   int _remainingRolls = 0;
@@ -37,10 +35,9 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
   int _dice1Value = 1;
   int _dice2Value = 1;
   int _rewardPoints = 0;
-  int _lastWonAmount = 0;
   
-  // Ad related variables
-  RewardedAd? _rewardedAd;
+  // Game tracking
+  int _consecutiveRolls = 0;
   
   @override
   void initState() {
@@ -49,30 +46,7 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
     // Initialize animation controller
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    
-    _bounceAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.3)
-          .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 25,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.3, end: 1.0)
-          .chain(CurveTween(curve: Curves.bounceOut)),
-        weight: 75,
-      ),
-    ]).animate(_controller);
-    
-    _rotationAnimation = Tween<double>(
-      begin: 0.0,
-      end: 6 * pi, // Multiple full rotations
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
-      ),
+      duration: const Duration(milliseconds: 800),
     );
     
     _controller.addStatusListener((status) {
@@ -82,18 +56,12 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       }
     });
     
-    // Initialize confetti controller
-    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
-    
     _checkRemainingRolls();
-    _loadAd();
   }
   
   @override
   void dispose() {
     _controller.dispose();
-    _rewardedAd?.dispose();
-    _confettiController.dispose();
     super.dispose();
   }
   
@@ -104,67 +72,17 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
     
     if (user != null) {
       setState(() {
-        _dailyDiceLimit = user.maxDailyDiceRolls;
         _remainingRolls = _dailyDiceLimit - user.dailyDiceCount;
         _canPlay = _remainingRolls > 0;
       });
     }
   }
   
-  // Load a rewarded ad
-  void _loadAd() {
-    setState(() {
-      _isAdLoading = true;
-    });
-    
-    RewardedAd.load(
-      adUnitId: 'ca-app-pub-3940256099942544/5224354917', // Replace with your actual ad unit ID
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (ad) {
-          setState(() {
-            _rewardedAd = ad;
-            _isAdLoading = false;
-          });
-          
-          // Set the callback to earn reward
-          _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _loadAd(); // Load a new ad for next roll
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              ad.dispose();
-              _loadAd();
-              setState(() {
-                _errorMessage = 'Error showing ad. Please try again.';
-              });
-            },
-          );
-        },
-        onAdFailedToLoad: (error) {
-          setState(() {
-            _isAdLoading = false;
-            _errorMessage = 'Failed to load ad. Please try again.';
-          });
-          debugPrint('Rewarded ad failed to load: ${error.message}');
-        },
-      ),
-    );
-  }
-  
-  // Show ad and prepare to roll dice
-  void _showAdAndRollDice() {
+  // Roll the dice with ad
+  void _rollDiceWithAd() {
     if (!_canPlay) {
       setState(() {
         _errorMessage = 'You\'ve reached your daily dice roll limit. Come back tomorrow!';
-      });
-      return;
-    }
-    
-    if (_rewardedAd == null) {
-      setState(() {
-        _errorMessage = 'Ad not loaded. Please wait or try again.';
       });
       return;
     }
@@ -173,13 +91,24 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       _errorMessage = null;
     });
     
-    // Show the ad
-    _rewardedAd?.show(
-      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
-        // When user watches the ad completely, roll the dice
-        _rollDice();
-      },
-    );
+    // This being the first roll or after a break
+    if (_consecutiveRolls == 0) {
+      _rollDice();
+      return;
+    }
+    
+    // Show interstitial ad every 3 rolls
+    if (_consecutiveRolls % 2 == 0 && _adService.isInterstitialAdAvailable) {
+      _adService.showInterstitialAd(
+        onAdDismissed: () {
+          // Roll dice after the ad is dismissed
+          _rollDice();
+        },
+      );
+    } else {
+      // Just roll the dice without showing an ad
+      _rollDice();
+    }
   }
   
   // Roll the dice
@@ -191,9 +120,15 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
     // Reset the animation controller
     _controller.reset();
     
-    // Animate the dice
-    for (int i = 0; i < 20; i++) {
-      Future.delayed(Duration(milliseconds: i * 50), () {
+    // Start the animation
+    _controller.forward();
+    
+    // Animate the dice using timer
+    int animationSteps = 10;
+    int stepDuration = 50;
+    
+    for (int i = 0; i < animationSteps; i++) {
+      Future.delayed(Duration(milliseconds: i * stepDuration), () {
         if (mounted && _isRolling) {
           setState(() {
             _dice1Value = _random.nextInt(6) + 1;
@@ -203,8 +138,17 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       });
     }
     
-    // Start the bounce and rotation animation
-    _controller.forward();
+    // Final values will be set when the animation completes
+    Future.delayed(Duration(milliseconds: _controller.duration!.inMilliseconds), () {
+      if (mounted && _isRolling) {
+        setState(() {
+          _dice1Value = _random.nextInt(6) + 1;
+          _dice2Value = _random.nextInt(6) + 1;
+          _isRolling = false;
+          _consecutiveRolls++; // Increment consecutive rolls count
+        });
+      }
+    });
   }
   
   // Calculate reward based on dice values
@@ -246,14 +190,6 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
         return;
       }
       
-      // Record the amount won for display
-      _lastWonAmount = _rewardPoints;
-      
-      // Play confetti for big wins
-      if (_rewardPoints >= 200) {
-        _confettiController.play();
-      }
-      
       // Update daily dice count
       await userProvider.incrementDailyCounter('dice');
       
@@ -261,25 +197,22 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       await userProvider.updatePoints(
         _rewardPoints,
         'earn_dice',
-        description: 'Earned from Dice Roll ($_dice1Value+$_dice2Value)',
+        description: 'Earned from Dice Roll (${_dice1Value}+${_dice2Value})',
       );
       
       setState(() {
         _remainingRolls = _dailyDiceLimit - (user.dailyDiceCount + 1);
         _canPlay = _remainingRolls > 0;
         _isLoading = false;
-        _isRolling = false;
       });
       
       // Show reward dialog
       _showRewardDialog();
       
     } catch (e) {
-      debugPrint('Error awarding points: $e');
       setState(() {
         _errorMessage = 'Error awarding points: $e';
         _isLoading = false;
-        _isRolling = false;
       });
     }
   }
@@ -319,514 +252,66 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text('You Rolled ${_dice1Value + _dice2Value}!', textAlign: TextAlign.center),
+        title: Text('You Rolled ${_dice1Value + _dice2Value}!'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
               color: color,
-              size: 60,
+              size: 50,
             ),
             const SizedBox(height: 16),
             Text(
               message,
               style: const TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.monetization_on, color: Colors.green),
-                  const SizedBox(width: 8),
-                  Text(
-                    '+$_rewardPoints points',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 16),
             Text(
+              'You won $_rewardPoints points!',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
               'You have $_remainingRolls rolls left today',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
+              style: const TextStyle(
+                color: Colors.grey,
               ),
             ),
           ],
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
         actions: [
           if (_remainingRolls > 0) ...[
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('EXIT GAME'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _consecutiveRolls = 0; // Reset consecutive rolls when exiting
+                });
+              },
+              child: const Text('Exit Game'),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _showAdAndRollDice();
+                _rollDiceWithAd();
               },
-              child: const Text('ROLL AGAIN'),
+              child: const Text('Roll Again'),
             ),
           ] else
             FilledButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('DONE'),
+              child: const Text('Done'),
             ),
         ],
-      ),
-    );
-  }
-  
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dice Roll'),
-        elevation: 0,
-      ),
-      body: Consumer<UserProvider>(
-        builder: (context, userProvider, _) {
-          return Stack(
-            children: [
-              // Background gradient
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      theme.primaryColor.withOpacity(0.05),
-                      Colors.white,
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Main content
-              SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      // Top info card
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 4,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: theme.primaryColor.withOpacity(0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.casino,
-                                      color: theme.primaryColor,
-                                      size: 24,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Your Points',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${userProvider.points}',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: _remainingRolls > 0 
-                                    ? Colors.green.withOpacity(0.1) 
-                                    : Colors.red.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.casino,
-                                      size: 16,
-                                      color: _remainingRolls > 0 ? Colors.green : Colors.red,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '$_remainingRolls / $_dailyDiceLimit',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: _remainingRolls > 0 ? Colors.green : Colors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      if (_lastWonAmount > 0 && !_isRolling) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.paid,
-                                color: Colors.green,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Last Win: +$_lastWonAmount points',
-                                style: const TextStyle(
-                                  color: Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Error message
-                      if (_errorMessage != null) ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.error, color: Colors.red.shade700),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: TextStyle(color: Colors.red.shade700),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 16),
-                                onPressed: () {
-                                  setState(() {
-                                    _errorMessage = null;
-                                  });
-                                },
-                                color: Colors.red.shade700,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      
-                      // Loading indicator
-                      if (_isLoading && !_isRolling) ...[
-                        const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      
-                      // Instructions or limit reached message
-                      if (!_canPlay) ...[
-                        Card(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: Column(
-                              children: [
-                                const Icon(
-                                  Icons.access_time,
-                                  size: 60,
-                                  color: Colors.orange,
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Daily Limit Reached',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'You\'ve used all your dice rolls for today. Come back tomorrow for more chances to win!',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 16),
-                                ),
-                                const SizedBox(height: 24),
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 48,
-                                  child: OutlinedButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    style: OutlinedButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(24),
-                                      ),
-                                    ),
-                                    child: const Text('BACK TO GAMES'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ] else ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Roll the dice and win points based on your roll!',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Doubles and special combinations earn bonus points',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        
-                        // Dice display
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _controller,
-                                builder: (context, child) {
-                                  return Transform.scale(
-                                    scale: _bounceAnimation.value,
-                                    child: Transform.rotate(
-                                      angle: _rotationAnimation.value,
-                                      child: _buildDice(_dice1Value),
-                                    ),
-                                  );
-                                },
-                              ),
-                              AnimatedBuilder(
-                                animation: _controller,
-                                builder: (context, child) {
-                                  return Transform.scale(
-                                    scale: _bounceAnimation.value,
-                                    child: Transform.rotate(
-                                      angle: -_rotationAnimation.value, // Opposite direction
-                                      child: _buildDice(_dice2Value),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        
-                        // Total display
-                        if (_isRolling) ...[
-                          const Text(
-                            'Rolling...',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ] else ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(color: Colors.blue.shade200),
-                            ),
-                            child: Text(
-                              'Total: ${_dice1Value + _dice2Value}',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 32),
-                        
-                        // Roll button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton.icon(
-                            onPressed: (_isAdLoading || _isRolling || _isLoading) ? null : _showAdAndRollDice,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.primaryColor,
-                              foregroundColor: Colors.white,
-                              elevation: 5,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(28),
-                              ),
-                            ),
-                            icon: _isAdLoading
-                                ? SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                    ),
-                                  )
-                                : const Icon(Icons.casino),
-                            label: Text(
-                              _isRolling ? 'ROLLING...' : 'ROLL DICE',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Watch a short ad to roll the dice',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                      
-                      const SizedBox(height: 32),
-                      
-                      // Points chart
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.info_outline, color: theme.primaryColor),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Rewards Chart',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Divider(height: 24),
-                              _buildPointsRow('Snake Eyes (Two 1s)', '50', Colors.red),
-                              _buildPointsRow('Double Sixes', '500', Colors.amber),
-                              _buildPointsRow('Any Other Doubles', 'Sum × 25', Colors.blue),
-                              _buildPointsRow('Lucky 7 or 11', '200', Colors.green),
-                              _buildPointsRow('Any Other Roll', 'Sum × 10', Colors.purple),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Confetti effect
-              Align(
-                alignment: Alignment.topCenter,
-                child: ConfettiWidget(
-                  confettiController: _confettiController,
-                  blastDirection: pi / 2,
-                  maxBlastForce: 5,
-                  minBlastForce: 1,
-                  emissionFrequency: 0.05,
-                  numberOfParticles: 20,
-                  gravity: 0.1,
-                  shouldLoop: false,
-                  colors: const [
-                    Colors.green,
-                    Colors.blue,
-                    Colors.pink,
-                    Colors.orange,
-                    Colors.purple,
-                    Colors.red,
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
@@ -837,22 +322,33 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
       width: 100,
       height: 100,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFe53935), Color(0xFFc62828)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 5,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Center(
-        child: _getDiceFace(value),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            double scale = 1.0;
+            if (_isRolling) {
+              // Create a bouncing effect
+              final double value = _controller.value;
+              scale = 1.0 + sin(value * pi * 2) * 0.2;
+            }
+            
+            return Transform.scale(
+              scale: scale,
+              child: _getDiceFace(value),
+            );
+          },
+        ),
       ),
     );
   }
@@ -882,7 +378,6 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
     return Padding(
       padding: const EdgeInsets.all(12.0),
       child: GridView.builder(
-        shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
@@ -894,15 +389,8 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
           if (dotPositions.contains(index)) {
             return Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.red.shade900,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 2,
-                    spreadRadius: 1,
-                  ),
-                ],
               ),
             );
           }
@@ -912,29 +400,287 @@ class _DiceGameScreenState extends State<DiceGameScreen> with SingleTickerProvid
     );
   }
   
-  // Helper method to build points chart rows
-  Widget _buildPointsRow(String label, String points, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dice Roll'),
+      ),
+      body: Column(
         children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+          // Main content in a scrollable area
+          Expanded(
+            child: Consumer<UserProvider>(
+              builder: (context, userProvider, _) {
+                return SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        // Top info card
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Your Points',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${userProvider.points}',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    const Text(
+                                      'Rolls Left Today',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_remainingRolls',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: _remainingRolls > 0 ? Colors.green : Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Error message
+                        if (_errorMessage != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.error, color: Colors.red.shade700),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _errorMessage!,
+                                    style: TextStyle(color: Colors.red.shade700),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        
+                        // Loading indicator
+                        if (_isLoading) ...[
+                          const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        
+                        // Instructions or limit reached message
+                        if (!_canPlay) ...[
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  const Icon(
+                                    Icons.access_time,
+                                    size: 50,
+                                    color: Colors.orange,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Daily Limit Reached',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'You\'ve used all your dice rolls for today. Come back tomorrow for more!',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  OutlinedButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: const Text('Go Back'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ] else ...[
+                          const Text(
+                            'Roll the dice and win points based on your roll!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          
+                          // Dice display
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildDice(_dice1Value),
+                              _buildDice(_dice2Value),
+                            ],
+                          ),
+                          const SizedBox(height: 32),
+                          
+                          // Total display
+                          if (_isRolling) ...[
+                            const Text(
+                              'Rolling...',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ] else ...[
+                            Text(
+                              'Total: ${_dice1Value + _dice2Value}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 32),
+                          
+                          // Roll button
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: (_isRolling || _isLoading) ? null : _rollDiceWithAd,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                backgroundColor: Colors.blue,
+                              ),
+                              icon: const Icon(Icons.casino),
+                              label: const Text('ROLL DICE'),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Watch a short ad to roll the dice',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                        
+                        const SizedBox(height: 24),
+                        
+                        // Points chart
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Points Chart',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                const Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        'Roll',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 1,
+                                      child: Text(
+                                        'Points',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(),
+                                _buildPointsRow('Snake Eyes (Two 1s)', '50'),
+                                _buildPointsRow('Double Sixes', '500'),
+                                _buildPointsRow('Any Other Doubles', 'Sum × 25'),
+                                _buildPointsRow('Lucky 7 or 11', '200'),
+                                _buildPointsRow('Any Other Roll', 'Sum × 10'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          const SizedBox(width: 12),
+          
+          // Banner ad at the bottom
+          const BannerAdWidget(),
+        ],
+      ),
+    );
+  }
+  
+  // Helper method to build points chart rows
+  Widget _buildPointsRow(String label, String points) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
           Expanded(
+            flex: 2,
             child: Text(label),
           ),
-          Text(
-            points,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: color,
+          Expanded(
+            flex: 1,
+            child: Text(
+              points,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
             ),
           ),
         ],
