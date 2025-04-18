@@ -22,10 +22,15 @@ class UserProvider extends ChangeNotifier {
       return;
     }
     
-    setLoading(true);
+    // Safely update loading state without triggering during build
+    _setLoadingSafe(true);
+    
     try {
       debugPrint("UserProvider: Initializing user $uid from Firestore");
-      _user = await _firestoreService.getUserData(uid);
+      final userData = await _firestoreService.getUserData(uid);
+      
+      // Update user data
+      _user = userData;
       
       // Update sign-in status to true whenever user data is loaded
       if (_user != null && !_user!.isSignedIn) {
@@ -39,16 +44,42 @@ class UserProvider extends ChangeNotifier {
       // Check if day changed to reset daily counters and update streak
       await _checkAndUpdateDaily(uid);
       
-      notifyListeners();
+      // Safely notify listeners
+      _notifyListenersSafe();
     } catch (e) {
       debugPrint('UserProvider: Error initializing user: $e');
       // Clear user data on error to ensure a clean state
       _user = null;
-      notifyListeners();
+      _notifyListenersSafe();
       rethrow; // Re-throw to allow wrapper to handle appropriately
     } finally {
-      setLoading(false);
+      _setLoadingSafe(false);
     }
+  }
+
+  // Safely set loading state with a microtask to avoid build-phase conflicts
+  void _setLoadingSafe(bool loading) {
+    if (_isLoading == loading) return; // No change needed
+    
+    _isLoading = loading;
+    Future.microtask(() {
+      try {
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error in _setLoadingSafe: $e');
+      }
+    });
+  }
+  
+  // Safely notify listeners with a microtask to avoid build-phase conflicts
+  void _notifyListenersSafe() {
+    Future.microtask(() {
+      try {
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error in _notifyListenersSafe: $e');
+      }
+    });
   }
   
   // Create new user on signup
@@ -62,7 +93,7 @@ class UserProvider extends ChangeNotifier {
     try {
       debugPrint("UserProvider: Creating new user in Firestore for $uid");
       debugPrint("UserProvider: Referral info - referredBy: $referredBy");
-      setLoading(true);
+      _setLoadingSafe(true);
       
       final DateTime now = DateTime.now();
       await _firestoreService.createUser(
@@ -101,10 +132,10 @@ class UserProvider extends ChangeNotifier {
       debugPrint('UserProvider: Error creating new user: $e');
       // Clear user data on error to ensure a clean state
       _user = null;
-      notifyListeners();
+      _notifyListenersSafe();
       rethrow; // Re-throw for UI to handle
     } finally {
-      setLoading(false);
+      _setLoadingSafe(false);
     }
   }
   
@@ -135,13 +166,13 @@ class UserProvider extends ChangeNotifier {
       // Update local model
       _user = updatedUser;
       
-      notifyListeners();
+      _notifyListenersSafe();
       debugPrint("UserProvider: Profile updated successfully");
     } catch (e) {
       debugPrint('UserProvider: Error updating profile: $e');
       rethrow; // Re-throw for UI to handle
     } finally {
-      setLoading(false);
+      _setLoadingSafe(false);
     }
   }
   
@@ -158,7 +189,7 @@ class UserProvider extends ChangeNotifier {
         pointsBalance: _user!.pointsBalance + points,
       );
       
-      notifyListeners();
+      _notifyListenersSafe();
     } catch (e) {
       debugPrint('Error updating points: $e');
     }
@@ -202,7 +233,7 @@ class UserProvider extends ChangeNotifier {
     
     if (newCount != null) {
       await _firestoreService.updateDailyCounter(_user!.uid, activity, newCount);
-      notifyListeners();
+      _notifyListenersSafe();
     }
   }
   
@@ -220,7 +251,7 @@ class UserProvider extends ChangeNotifier {
         todayAdEarnings: _user!.todayAdEarnings + earningsAmount,
       );
       
-      notifyListeners();
+      _notifyListenersSafe();
     } catch (e) {
       debugPrint('Error updating ad earnings: $e');
     }
@@ -291,14 +322,13 @@ class UserProvider extends ChangeNotifier {
     // Add additional cleanup if needed
     // For example, cancel any active timers or subscriptions
     
-    notifyListeners();
+    _notifyListenersSafe();
     debugPrint('UserProvider: User data cleared successfully');
   }
   
   // Helper method to set loading state
   void setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
+    _setLoadingSafe(loading);
   }
 
   // Add points to user's balance
@@ -319,7 +349,7 @@ class UserProvider extends ChangeNotifier {
         pointsBalance: _user!.pointsBalance + amount,
       );
       
-      notifyListeners();
+      _notifyListenersSafe();
     } catch (e) {
       debugPrint('Error adding points: $e');
     }
