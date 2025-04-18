@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pocket_payout_bd/providers/user_provider.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
+import 'package:pocket_payout_bd/widgets/banner_ad_widget.dart';
 import 'spin_wheel_screen.dart';
 import 'dice_game_screen.dart';
 import 'math_puzzle_screen.dart';
@@ -21,183 +22,193 @@ class GamesMenuScreen extends StatelessWidget {
         title: const Text('Games & Earn'),
         elevation: 0,
       ),
-      body: Consumer<UserProvider>(
-        builder: (context, userProvider, _) {
-          final user = userProvider.user;
-          final points = user?.pointsBalance ?? 0;
+      body: Column(
+        children: [
+          // Banner Ad at the top
+          const BannerAdWidget(showOnTop: true),
           
-          return Column(
-            children: [
-              // Top points card
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      theme.primaryColor,
-                      theme.primaryColor.withOpacity(0.7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Your Points',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.white70,
+          // Game content
+          Expanded(
+            child: Consumer<UserProvider>(
+              builder: (context, userProvider, _) {
+                final user = userProvider.user;
+                final points = user?.pointsBalance ?? 0;
+                
+                return Column(
+                  children: [
+                    // Top points card
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            theme.primaryColor,
+                            theme.primaryColor.withOpacity(0.7),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Your Points',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.monetization_on,
+                                  color: Colors.amber,
+                                  size: 32,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$points',
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
+                    ),
+                    
+                    // Section title
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8),
+                      child: Row(
                         children: [
-                          const Icon(
-                            Icons.monetization_on,
-                            color: Colors.amber,
-                            size: 32,
-                          ),
+                          Icon(Icons.games, color: theme.primaryColor),
                           const SizedBox(width: 8),
                           Text(
-                            '$points',
-                            style: const TextStyle(
-                              fontSize: 32,
+                            'Available Games',
+                            style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Section title
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.games, color: theme.primaryColor),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Available Games',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    ),
+                    
+                    // Game cards
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: GridView.count(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 0.75,
+                          children: [
+                            _GameCard(
+                              title: 'Spin Wheel',
+                              description: 'Spin the wheel and win random points',
+                              icon: Icons.rotate_right,
+                              color: Colors.purple,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const SpinWheelScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['spin']!}',
+                              remainingPlays: user?.maxDailySpins ?? 10 - (user?.dailySpinCount ?? 0),
+                              maxPlays: user?.maxDailySpins ?? 10,
+                            ),
+                            _GameCard(
+                              title: 'Dice Roll',
+                              description: 'Roll the dice and try your luck',
+                              icon: Icons.casino,
+                              color: Colors.red,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const DiceGameScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['dice']!}',
+                              remainingPlays: user?.maxDailyDiceRolls ?? 15 - (user?.dailyDiceCount ?? 0),
+                              maxPlays: user?.maxDailyDiceRolls ?? 15,
+                            ),
+                            _GameCard(
+                              title: 'Math Puzzles',
+                              description: 'Solve math problems and earn rewards',
+                              icon: Icons.calculate,
+                              color: Colors.indigo,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const MathPuzzleScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['math_puzzle']!}',
+                              remainingPlays: user?.remainingMathPuzzles ?? 0,
+                              maxPlays: user?.maxDailyMathPuzzles ?? 10,
+                            ),
+                            _GameCard(
+                              title: 'Memory Game',
+                              description: 'Test your memory skills to earn points',
+                              icon: Icons.psychology,
+                              color: Colors.teal,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const MemoryGameScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['memory_game']!}',
+                              remainingPlays: user?.remainingMemoryGames ?? 0,
+                              maxPlays: user?.maxDailyMemoryGames ?? 5,
+                            ),
+                            _GameCard(
+                              title: 'Color Match',
+                              description: 'Match colors quickly to earn rewards',
+                              icon: Icons.palette,
+                              color: Colors.amber,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const ColorMatchScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['color_match']!}',
+                              remainingPlays: user?.remainingColorMatches ?? 0,
+                              maxPlays: user?.maxDailyColorMatches ?? 8,
+                            ),
+                            _GameCard(
+                              title: 'Word Game',
+                              description: 'Test your vocabulary to earn points',
+                              icon: Icons.text_fields,
+                              color: Colors.green,
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const WordGameScreen()),
+                              ),
+                              pointsRange: '${GameConstants.basePoints['word_game']!}',
+                              remainingPlays: user?.remainingWordGames ?? 0,
+                              maxPlays: user?.maxDailyWordGames ?? 6,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                ),
-              ),
-              
-              // Game cards
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 0.75,
-                    children: [
-                      _GameCard(
-                        title: 'Spin Wheel',
-                        description: 'Spin the wheel and win random points',
-                        icon: Icons.rotate_right,
-                        color: Colors.purple,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const SpinWheelScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['spin']!}',
-                        remainingPlays: user?.maxDailySpins ?? 10 - (user?.dailySpinCount ?? 0),
-                        maxPlays: user?.maxDailySpins ?? 10,
-                      ),
-                      _GameCard(
-                        title: 'Dice Roll',
-                        description: 'Roll the dice and try your luck',
-                        icon: Icons.casino,
-                        color: Colors.red,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const DiceGameScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['dice']!}',
-                        remainingPlays: user?.maxDailyDiceRolls ?? 15 - (user?.dailyDiceCount ?? 0),
-                        maxPlays: user?.maxDailyDiceRolls ?? 15,
-                      ),
-                      _GameCard(
-                        title: 'Math Puzzles',
-                        description: 'Solve math problems and earn rewards',
-                        icon: Icons.calculate,
-                        color: Colors.indigo,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const MathPuzzleScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['math_puzzle']!}',
-                        remainingPlays: user?.remainingMathPuzzles ?? 0,
-                        maxPlays: user?.maxDailyMathPuzzles ?? 10,
-                      ),
-                      _GameCard(
-                        title: 'Memory Game',
-                        description: 'Test your memory skills to earn points',
-                        icon: Icons.psychology,
-                        color: Colors.teal,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const MemoryGameScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['memory_game']!}',
-                        remainingPlays: user?.remainingMemoryGames ?? 0,
-                        maxPlays: user?.maxDailyMemoryGames ?? 5,
-                      ),
-                      _GameCard(
-                        title: 'Color Match',
-                        description: 'Match colors quickly to earn rewards',
-                        icon: Icons.palette,
-                        color: Colors.amber,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ColorMatchScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['color_match']!}',
-                        remainingPlays: user?.remainingColorMatches ?? 0,
-                        maxPlays: user?.maxDailyColorMatches ?? 8,
-                      ),
-                      _GameCard(
-                        title: 'Word Game',
-                        description: 'Test your vocabulary to earn points',
-                        icon: Icons.text_fields,
-                        color: Colors.green,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const WordGameScreen()),
-                        ),
-                        pointsRange: '${GameConstants.basePoints['word_game']!}',
-                        remainingPlays: user?.remainingWordGames ?? 0,
-                        maxPlays: user?.maxDailyWordGames ?? 6,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
