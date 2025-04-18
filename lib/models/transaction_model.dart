@@ -15,7 +15,7 @@ class TransactionModel {
     required this.points,
     this.description,
     DateTime? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now();
+  }) : this.timestamp = timestamp ?? DateTime.now();
 
   factory TransactionModel.fromMap(Map<String, dynamic> data, String id) {
     return TransactionModel(
@@ -24,9 +24,7 @@ class TransactionModel {
       type: data['type'],
       points: data['points'],
       description: data['description'],
-      timestamp: data['timestamp'] != null 
-          ? (data['timestamp'] as Timestamp).toDate() 
-          : DateTime.now(),
+      timestamp: (data['timestamp'] as Timestamp).toDate(),
     );
   }
 
