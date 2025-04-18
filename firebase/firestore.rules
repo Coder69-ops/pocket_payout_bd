@@ -22,7 +22,9 @@ service cloud.firestore {
       allow get: if isUserAuthenticated(userId) || isAdmin();
       
       // Allow reading user data by referral code for validation - even without authentication
-      allow list: if request.query.where.referralCode != null;
+      // This is the updated rule that should fix the permission issue
+      allow list: if request.query.limit <= 20 && 
+                   ('referralCode' in request.query.where);
       
       // Admin can list all users (made more specific)
       allow list: if isAdmin() &&
@@ -54,8 +56,10 @@ service cloud.firestore {
     
     // Pending referrals collection (even more permissive rules)
     match /pending_referrals/{pendingId} {
-      // Any user can create a pending referral, even without authentication
-      allow create: if request.resource.data.keys().hasAll(['userId', 'referralCode']);
+      // Any authenticated user can create a pending referral
+      allow create: if isAuthenticated() && 
+                    request.resource.data.keys().hasAll(['userId', 'referralCode']) &&
+                    request.resource.data.userId == request.auth.uid;
       
       // Users can read their own pending referrals
       allow get, list: if isAuthenticated() && 
@@ -113,4 +117,4 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
   }
-} 
+}
