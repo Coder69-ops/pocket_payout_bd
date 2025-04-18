@@ -99,8 +99,8 @@ The app uses Firebase for:
 
 ## License
 
-Copyright © 2023
+Copyright © 2025
 
 ## Contact
 
-For support or inquiries, please contact the project owner.
+For support or inquiries, please contact https://www.linkedin.com/in/ovejit-das-826987354/.
