@@ -4,6 +4,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:pocket_payout_bd/providers/user_provider.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
+import 'package:pocket_payout_bd/services/ad_service.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:confetti/confetti.dart';
@@ -17,10 +18,9 @@ class WatchAdsScreen extends StatefulWidget {
 }
 
 class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProviderStateMixin {
-  RewardedAd? _rewardedAd;
+  final AdService _adService = AdService();
   InterstitialAd? _interstitialAd;
   BannerAd? _bannerAd;
-  bool _isRewardedAdLoading = false;
   bool _isInterstitialAdLoading = false;
   bool _isBannerAdLoaded = false;
   bool _isAwarding = false;
@@ -77,7 +77,6 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _loadUserData();
-    _loadRewardedAd();
     _loadInterstitialAd();
     _loadBannerAd();
     
@@ -118,155 +117,46 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
     }
   }
 
-  void _loadRewardedAd() {
-    setState(() {
-      _isRewardedAdLoading = true;
-    });
-    
-    RewardedAd.load(
-      adUnitId: AppConstants.rewardedAdUnitId,
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (ad) {
-          debugPrint('Rewarded ad loaded successfully');
-          setState(() {
-            _rewardedAd = ad;
-            _isRewardedAdLoading = false;
-          });
-          
-          _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              debugPrint('Rewarded ad dismissed');
-              ad.dispose();
-              _loadRewardedAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              debugPrint('Rewarded ad failed to show: $error');
-              ad.dispose();
-              _loadRewardedAd();
-            },
-            onAdShowedFullScreenContent: (ad) {
-              debugPrint('Rewarded ad showed fullscreen content');
-            },
-            onAdImpression: (ad) {
-              debugPrint('Rewarded ad impression recorded');
-            },
-          );
-        },
-        onAdFailedToLoad: (error) {
-          debugPrint('Failed to load rewarded ad: ${error.message} (code: ${error.code})');
-          setState(() {
-            _rewardedAd = null;
-            _isRewardedAdLoading = false;
-          });
-          
-          // Retry after a delay
-          Future.delayed(const Duration(minutes: 1), () {
-            if (mounted) {
-              _loadRewardedAd();
-            }
-          });
-        },
-      ),
-    );
-  }
-  
   void _loadInterstitialAd() {
     setState(() {
       _isInterstitialAdLoading = true;
     });
     
-    InterstitialAd.load(
-      adUnitId: AppConstants.interstitialAdUnitId,
-      request: const AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) {
-          debugPrint('Interstitial ad loaded successfully');
+    // Use AdService to load the interstitial ad
+    _adService.loadInterstitialAd();
+    
+    // Set up a periodic check to monitor ad availability
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        // Check if ad is available from AdService
+        final bool isAdAvailable = _adService.isInterstitialAdAvailable;
+        
+        if (isAdAvailable) {
           setState(() {
-            _interstitialAd = ad;
             _isInterstitialAdLoading = false;
           });
           
-          _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              debugPrint('Interstitial ad dismissed');
-              ad.dispose();
-              _loadInterstitialAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, error) {
-              debugPrint('Interstitial ad failed to show: $error');
-              ad.dispose();
-              _loadInterstitialAd();
-            },
-            onAdShowedFullScreenContent: (ad) {
-              debugPrint('Interstitial ad showed fullscreen content');
-            },
-            onAdImpression: (ad) {
-              debugPrint('Interstitial ad impression recorded');
-            },
-          );
-        },
-        onAdFailedToLoad: (error) {
-          debugPrint('Failed to load interstitial ad: ${error.message} (code: ${error.code})');
-          setState(() {
-            _interstitialAd = null;
-            _isInterstitialAdLoading = false;
-          });
-          
-          // Retry after a delay
-          Future.delayed(const Duration(minutes: 1), () {
-            if (mounted) {
-              _loadInterstitialAd();
-            }
-          });
-        },
-      ),
-    );
+          timer.cancel();
+        }
+      } else {
+        timer.cancel();
+      }
+    });
   }
   
   void _loadBannerAd() {
-    _bannerAd = BannerAd(
-      adUnitId: AppConstants.bannerAdUnitId,
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (_) {
-          debugPrint('Banner ad loaded successfully');
-          setState(() {
-            _isBannerAdLoaded = true;
-          });
-        },
-        onAdFailedToLoad: (ad, error) {
-          debugPrint('Banner ad failed to load: ${error.message} (code: ${error.code})');
-          ad.dispose();
-          setState(() {
-            _isBannerAdLoaded = false;
-          });
-          
-          // Retry after a delay
-          Future.delayed(const Duration(minutes: 1), () {
-            if (mounted) {
-              _loadBannerAd();
-            }
-          });
-        },
-        onAdOpened: (ad) {
-          debugPrint('Banner ad opened');
-        },
-        onAdClosed: (ad) {
-          debugPrint('Banner ad closed');
-        },
-        onAdImpression: (ad) {
-          debugPrint('Banner ad impression recorded');
-        },
-      ),
-    );
-    
-    _bannerAd!.load();
+    _bannerAd = _adService.createBannerAd();
+    _bannerAd!.load().then((_) {
+      if (mounted) {
+        setState(() {
+          _isBannerAdLoaded = true;
+        });
+      }
+    });
   }
   
   Future<void> _showRewardedAd() async {
-    if (_rewardedAd == null) {
+    if (!_adService.isRewardedAdAvailable) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ad not ready. Please try again.')),
       );
@@ -283,22 +173,21 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
     // Haptic feedback
     HapticFeedback.mediumImpact();
     
-    // Show ad
-    _rewardedAd!.show(
-      onUserEarnedReward: (_, reward) {
+    // Show ad using the AdService
+    final bool success = await _adService.showRewardedAd(
+      onUserEarnedReward: (ad, reward) {
         _processReward();
       },
     );
     
-    // Set a null reference to indicate the ad is being shown
-    _rewardedAd = null;
-    
-    // Start cooldown timer
-    _startCooldown();
+    if (success) {
+      // Start cooldown timer
+      _startCooldown();
+    }
   }
   
   Future<void> _showInterstitialAd() async {
-    if (_interstitialAd == null) {
+    if (!_adService.isInterstitialAdAvailable) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ad not ready. Please try again.')),
       );
@@ -315,19 +204,18 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
     // Haptic feedback
     HapticFeedback.mediumImpact();
     
-    // Show ad
-    _interstitialAd!.show();
+    // Show ad using AdService
+    final bool success = await _adService.showInterstitialAd(
+      onAdDismissed: () {
+        // Process reward after ad is dismissed
+        _processReward();
+      },
+    );
     
-    // Set a null reference to indicate the ad is being shown
-    _interstitialAd = null;
-    
-    // Process reward after a short delay (since interstitial ads don't have a direct reward callback)
-    Future.delayed(const Duration(seconds: 2), () {
-      _processReward();
-    });
-    
-    // Start cooldown timer
-    _startCooldown();
+    if (success) {
+      // Start cooldown timer
+      _startCooldown();
+    }
   }
   
   void _startCooldown() {
@@ -602,7 +490,6 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
 
   @override
   void dispose() {
-    _rewardedAd?.dispose();
     _interstitialAd?.dispose();
     _bannerAd?.dispose();
     _cooldownTimer?.cancel();
@@ -898,7 +785,7 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
                           return Transform.scale(
                             scale: _cooldownSeconds == 0 ? _pulseAnimation.value : 1.0,
                             child: ElevatedButton(
-                              onPressed: (_rewardedAd != null && _cooldownSeconds == 0 && !_isAwarding)
+                              onPressed: (_adService.isRewardedAdAvailable && _cooldownSeconds == 0 && !_isAwarding)
                                   ? _showRewardedAd
                                   : null,
                               style: ElevatedButton.styleFrom(
@@ -913,7 +800,7 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  _isRewardedAdLoading
+                                  _adService.isRewardedAdLoading
                                       ? const SizedBox(
                                           width: 24,
                                           height: 24,
@@ -944,7 +831,7 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
                         },
                       ),
                       
-                      if (_isBannerAdLoaded) ...[
+                      if (_isBannerAdLoaded && _bannerAd != null) ...[
                         const SizedBox(height: 16),
                         SizedBox(
                           height: 50,
@@ -1066,4 +953,4 @@ class _WatchAdsScreenState extends State<WatchAdsScreen> with SingleTickerProvid
     if (streakCount >= 3) return Colors.green;
     return Colors.blue;
   }
-} 
+}
