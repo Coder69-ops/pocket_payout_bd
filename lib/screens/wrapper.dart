@@ -101,11 +101,14 @@ class _AuthenticatedUserRouter extends StatefulWidget {
 
 class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
   late Future<Widget> _routeFuture;
-  bool _isInitialLoad = true; // Add flag to track initial load
+  bool _isInitialLoad = true;
+  final AuthService _authService = AuthService();
+  final FirestoreService _firestoreService = FirestoreService();
   
   @override
   void initState() {
     super.initState();
+    // Initialize the route future in initState, not during build
     _routeFuture = _determineUserRoute();
   }
   
@@ -168,11 +171,9 @@ class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
     );
   }
   
-  final AuthService _authService = AuthService();
-  final FirestoreService _firestoreService = FirestoreService();
-  
   // Determine which screen to show based on user profile existence and completion
   Future<Widget> _determineUserRoute() async {
+    // Get the UserProvider without listening to it
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     
     try {
@@ -184,7 +185,12 @@ class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
       
       // Try to load the user's Firestore data
       debugPrint("Checking if user exists in Firestore: ${widget.firebaseUser.uid}");
-      await userProvider.initUser(widget.firebaseUser.uid);
+      
+      // This is where the issue happens - we need to delay any UI updates until after build
+      // Use a Future.microtask to ensure we're not in the build phase
+      await Future.microtask(() async {
+        await userProvider.initUser(widget.firebaseUser.uid);
+      });
       
       // Double check authentication state after data load
       if (_authService.currentUser == null) {
@@ -198,13 +204,15 @@ class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
       if (userData == null) {
         debugPrint("User data is null after initialization, creating basic profile and sending to home");
         // Create a basic user profile automatically
-        await userProvider.createNewUser(
-          widget.firebaseUser.uid,
-          email: widget.firebaseUser.email,
-          displayName: widget.firebaseUser.displayName ?? "User",
-          phoneNumber: widget.firebaseUser.phoneNumber ?? "",
-        );
-        _isInitialLoad = false; // Set flag to false after initial load
+        await Future.microtask(() async {
+          await userProvider.createNewUser(
+            widget.firebaseUser.uid,
+            email: widget.firebaseUser.email,
+            displayName: widget.firebaseUser.displayName ?? "User",
+            phoneNumber: widget.firebaseUser.phoneNumber ?? "",
+          );
+        });
+        _isInitialLoad = false;
         return const HomeScreen();
       }
       
@@ -215,15 +223,17 @@ class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
         await _firestoreService.updateSignInStatus(widget.firebaseUser.uid, true);
         // Continue to home screen since this is a fresh login
         debugPrint("Sign-in status updated, sending user to home screen");
-        _isInitialLoad = false; // Set flag to false after initial load
+        _isInitialLoad = false;
         return const HomeScreen();
       }
       
       // Always route to home screen regardless of profile completion status
       debugPrint("Sending user directly to home screen");
-      _isInitialLoad = false; // Set flag to false after initial load
+      _isInitialLoad = false;
       return const HomeScreen();
     } catch (e) {
+      debugPrint("Error in _determineUserRoute: $e");
+      
       // First check if user is still authenticated
       if (_authService.currentUser == null) {
         debugPrint("Auth state changed during error handling, redirecting to auth");
@@ -231,23 +241,38 @@ class _AuthenticatedUserRouterState extends State<_AuthenticatedUserRouter> {
       }
       
       // Check if the error is because the user doesn't exist in Firestore
+      // Also handle permission-denied errors which may occur during referral code validation
       if (e.toString().contains('permission-denied') || 
           e.toString().contains('does not exist') || 
           e.toString().contains('User does not exist')) {
         
-        debugPrint("User doesn't exist in Firestore, creating basic profile and sending to home");
+        debugPrint("User doesn't exist in Firestore or encountered permission issues, creating basic profile and sending to home");
         // Create a basic user profile and send to home screen
         try {
-          final userProvider = Provider.of<UserProvider>(context, listen: false);
+          // Check if the user already exists in Provider (might have been partially loaded)
+          if (userProvider.user != null) {
+            debugPrint("User object exists in Provider, proceeding to home screen");
+            _isInitialLoad = false;
+            return const HomeScreen();
+          }
+          
+          // Otherwise create new user
           await userProvider.createNewUser(
             widget.firebaseUser.uid,
             email: widget.firebaseUser.email,
             displayName: widget.firebaseUser.displayName ?? "User",
             phoneNumber: widget.firebaseUser.phoneNumber ?? "",
           );
+          _isInitialLoad = false;
           return const HomeScreen();
         } catch (createError) {
           debugPrint("Error creating basic user profile: $createError");
+          // If we still fail to create the user, try one more approach
+          if (createError.toString().contains('permission-denied')) {
+            debugPrint("Permission error during user creation, forcing navigation to home screen");
+            _isInitialLoad = false;
+            return const HomeScreen();
+          }
           rethrow;
         }
       } else {
