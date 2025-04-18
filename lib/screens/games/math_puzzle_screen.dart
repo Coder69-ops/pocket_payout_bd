@@ -8,6 +8,7 @@ import 'package:pocket_payout_bd/utils/constants.dart';
 import 'package:confetti/confetti.dart';
 import 'package:pocket_payout_bd/services/ad_service.dart';
 import 'package:pocket_payout_bd/widgets/custom_button.dart';
+import 'package:pocket_payout_bd/widgets/banner_ad_widget.dart';
 
 class MathPuzzleScreen extends StatefulWidget {
   const MathPuzzleScreen({Key? key}) : super(key: key);
@@ -53,31 +54,38 @@ class _MathPuzzleScreenState extends State<MathPuzzleScreen> {
   }
 
   void _loadInterstitialAd() {
-    _adService.loadInterstitialAd(
-      onAdLoaded: (ad) {
-        _interstitialAd = ad;
-        _isAdLoaded = true;
-      },
-      onAdFailedToLoad: (error) {
-        debugPrint('Failed to load interstitial ad: $error');
-      },
-    );
+    _adService.loadInterstitialAd();
+    
+    // Update the ad loading status using AdService's getter
+    setState(() {
+      _isAdLoaded = _adService.isInterstitialAdAvailable;
+    });
+    
+    // Set up a periodic check to update our local ad availability
+    Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (mounted) {
+        setState(() {
+          _isAdLoaded = _adService.isInterstitialAdAvailable;
+          if (_isAdLoaded) {
+            _interstitialAd = _adService.isInterstitialAdAvailable ? _interstitialAd : null;
+            timer.cancel();
+          }
+        });
+      } else {
+        timer.cancel();
+      }
+    });
   }
 
   void _showInterstitialAd() {
-    if (_isAdLoaded && _interstitialAd != null) {
-      _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
-        onAdDismissedFullScreenContent: (ad) {
-          _awardPoints();
-          Navigator.pop(context);
-        },
-        onAdFailedToShowFullScreenContent: (ad, error) {
-          ad.dispose();
+    if (_adService.isInterstitialAdAvailable) {
+      // Use AdService to show the ad
+      _adService.showInterstitialAd(
+        onAdDismissed: () {
           _awardPoints();
           Navigator.pop(context);
         },
       );
-      _interstitialAd!.show();
     } else {
       _awardPoints();
       Navigator.pop(context);
@@ -217,12 +225,8 @@ class _MathPuzzleScreenState extends State<MathPuzzleScreen> {
     final int finalPoints = (totalPoints * streakMultiplier).round();
     
     try {
-      // Use updatePoints for consistency with other games
-      userProvider.updatePoints(
-        finalPoints,
-        TransactionTypes.earnMathPuzzle,
-        description: 'Completed Math Puzzle Game'
-      );
+      // Use addPoints method which is specifically designed for math puzzle points
+      userProvider.addPoints(finalPoints);
       
       // Update plays counter
       userProvider.updateMathPuzzlePlays();
@@ -257,214 +261,224 @@ class _MathPuzzleScreenState extends State<MathPuzzleScreen> {
         title: const Text('Math Puzzle'),
         centerTitle: true,
       ),
-      body: Stack(
+      body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
+          // Main content
+          Expanded(
+            child: Stack(
               children: [
-                // Timer and Score
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
+                Container(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      // Timer and Score
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Icon(Icons.timer, color: Colors.blue),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$_timeLeft s',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.green),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Score: $_score',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 40),
-                
-                // Problem display
-                if (!_gameOver)
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          spreadRadius: 3,
-                          blurRadius: 5,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Text(
-                      '$_num1 $_operation $_num2 = ?',
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                
-                const SizedBox(height: 40),
-                
-                // Answer options
-                if (!_gameOver)
-                  Expanded(
-                    child: GridView.count(
-                      crossAxisCount: 2,
-                      childAspectRatio: 1.5,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                      padding: const EdgeInsets.all(8),
-                      children: _options.map((option) {
-                        return InkWell(
-                          onTap: () => _checkAnswer(option),
-                          child: Container(
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.blue.shade300, Colors.blue.shade500],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.blue.withOpacity(0.3),
-                                  spreadRadius: 1,
-                                  blurRadius: 3,
-                                  offset: const Offset(0, 2),
+                              color: Colors.blue.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.timer, color: Colors.blue),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$_timeLeft s',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.blue,
+                                  ),
                                 ),
                               ],
                             ),
-                            child: Center(
-                              child: Text(
-                                option.toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.bold,
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.star, color: Colors.green),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Score: $_score',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.green,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                
-                // Game over screen
-                if (_gameOver)
-                  Expanded(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Game Over!',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Your Score: $_score / 10',
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _score >= 5 ? 'Great job! 🎉' : 'Keep practicing! 💪',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: _score >= 5 ? Colors.green : Colors.orange,
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              CustomButton(
-                                text: 'Play Again',
-                                onPressed: _restartGame,
-                                buttonColor: Colors.blue,
-                                width: 140,
-                              ),
-                              const SizedBox(width: 16),
-                              CustomButton(
-                                text: 'Finish',
-                                onPressed: _showInterstitialAd,
-                                buttonColor: Colors.green,
-                                width: 140,
-                              ),
-                            ],
                           ),
                         ],
                       ),
-                    ),
+                      
+                      const SizedBox(height: 40),
+                      
+                      // Problem display
+                      if (!_gameOver)
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.2),
+                                spreadRadius: 3,
+                                blurRadius: 5,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            '$_num1 $_operation $_num2 = ?',
+                            style: const TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 40),
+                      
+                      // Answer options
+                      if (!_gameOver)
+                        Expanded(
+                          child: GridView.count(
+                            crossAxisCount: 2,
+                            childAspectRatio: 1.5,
+                            crossAxisSpacing: 10,
+                            mainAxisSpacing: 10,
+                            padding: const EdgeInsets.all(8),
+                            children: _options.map((option) {
+                              return InkWell(
+                                onTap: () => _checkAnswer(option),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Colors.blue.shade300, Colors.blue.shade500],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.blue.withOpacity(0.3),
+                                        spreadRadius: 1,
+                                        blurRadius: 3,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      option.toString(),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      
+                      // Game over screen
+                      if (_gameOver)
+                        Expanded(
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Game Over!',
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Your Score: $_score / 10',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _score >= 5 ? 'Great job! 🎉' : 'Keep practicing! 💪',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: _score >= 5 ? Colors.green : Colors.orange,
+                                  ),
+                                ),
+                                const SizedBox(height: 32),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CustomButton(
+                                      text: 'Play Again',
+                                      onPressed: _restartGame,
+                                      buttonColor: Colors.blue,
+                                      width: 140,
+                                    ),
+                                    const SizedBox(width: 16),
+                                    CustomButton(
+                                      text: 'Finish',
+                                      onPressed: _showInterstitialAd,
+                                      buttonColor: Colors.green,
+                                      width: 140,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: ConfettiWidget(
+                    confettiController: _confettiController,
+                    blastDirectionality: BlastDirectionality.explosive,
+                    particleDrag: 0.05,
+                    emissionFrequency: 0.05,
+                    numberOfParticles: 20,
+                    gravity: 0.1,
+                    shouldLoop: false,
+                    colors: const [
+                      Colors.green,
+                      Colors.blue,
+                      Colors.pink,
+                      Colors.orange,
+                      Colors.purple,
+                      Colors.yellow,
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirectionality: BlastDirectionality.explosive,
-              particleDrag: 0.05,
-              emissionFrequency: 0.05,
-              numberOfParticles: 20,
-              gravity: 0.1,
-              shouldLoop: false,
-              colors: const [
-                Colors.green,
-                Colors.blue,
-                Colors.pink,
-                Colors.orange,
-                Colors.purple,
-                Colors.yellow,
-              ],
-            ),
-          ),
+          
+          // Banner ad at the bottom
+          const BannerAdWidget(),
         ],
       ),
     );
   }
-} 
+}
