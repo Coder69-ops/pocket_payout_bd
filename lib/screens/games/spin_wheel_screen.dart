@@ -6,6 +6,7 @@ import 'package:flutter_fortune_wheel/flutter_fortune_wheel.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:pocket_payout_bd/providers/user_provider.dart';
+import 'package:pocket_payout_bd/widgets/banner_ad_widget.dart';
 import 'package:confetti/confetti.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
@@ -18,7 +19,7 @@ class SpinWheelScreen extends StatefulWidget {
 }
 
 class _SpinWheelScreenState extends State<SpinWheelScreen> with SingleTickerProviderStateMixin {
-  static const List<int> _rewards = [150, 300, 600, 900, 1500, 3000];
+  static const List<int> _rewards = [60, 120, 240, 360, 600, 1200];
   static const List<Color> _wheelColors = [
     Colors.red,
     Colors.green,
@@ -349,297 +350,307 @@ class _SpinWheelScreenState extends State<SpinWheelScreen> with SingleTickerProv
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
+          : Column(
               children: [
-                // Background gradient
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        theme.primaryColor.withOpacity(0.05),
-                        Colors.white,
-                      ],
-                    ),
-                  ),
-                ),
-                
                 // Main content
-                Column(
-                  children: [
-                    // Top info card
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: theme.primaryColor.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.rotate_right,
-                                  color: theme.primaryColor,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Remaining Spins',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                    Text(
-                                      '$_remainingSpins / $_maxDailySpins',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: _remainingSpins > 0 ? Colors.black : Colors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (_lastWonAmount > 0) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.monetization_on,
-                                        color: Colors.green,
-                                        size: 16,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '+$_lastWonAmount',
-                                        style: const TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                Expanded(
+                  child: Stack(
+                    children: [
+                      // Background gradient
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              theme.primaryColor.withOpacity(0.05),
+                              Colors.white,
                             ],
                           ),
                         ),
                       ),
-                    ),
-                    
-                    // Wheel container
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // Outer decoration
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 20,
-                                    spreadRadius: 5,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            
-                            // Wheel
-                            FortuneWheel(
-                              selected: _controller.stream,
-                              animateFirst: false,
-                              physics: CircularPanPhysics(
-                                duration: const Duration(seconds: 1, milliseconds: 500),
-                                curve: Curves.decelerate,
-                              ),
-                              onAnimationEnd: () {
-                                setState(() {
-                                  _isSpinning = false;
-                                });
-                              },
-                              indicators: const [
-                                FortuneIndicator(
-                                  alignment: Alignment.topCenter,
-                                  child: TriangleIndicator(
-                                    color: Colors.red,
-                                  ),
-                                ),
-                              ],
-                              styleStrategy: UniformStyleStrategy(
-                                borderColor: Colors.white,
-                                borderWidth: 3,
-                                textAlign: TextAlign.center,
-                                textStyle: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 20,
-                                ),
-                              ),
-                              items: List.generate(_rewards.length, (index) {
-                                return FortuneItem(
-                                  style: FortuneItemStyle(
-                                    color: _wheelColors[index],
-                                    borderColor: Colors.white,
-                                    borderWidth: 2,
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(top: 30.0),
-                                    child: Text(
-                                      '${_rewards[index]}\npts',
-                                    ),
-                                  ),
-                                );
-                              }),
-                            ),
-                            
-                            // Center decoration
-                            Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 5,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: theme.primaryColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.rotate_right,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    // Buttons
-                    Container(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
+                      
+                      // Main content
+                      Column(
                         children: [
-                          AnimatedBuilder(
-                            animation: _spinButtonController,
-                            builder: (context, child) {
-                              return Transform.scale(
-                                scale: _remainingSpins > 0 && !_isSpinning ? _spinButtonAnimation.value : 1.0,
-                                child: child,
-                              );
-                            },
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: 56,
-                              child: ElevatedButton(
-                                onPressed: _remainingSpins > 0 && !_isSpinning
-                                    ? _spin
-                                    : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: theme.primaryColor,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(28),
-                                  ),
-                                  elevation: 5,
-                                ),
-                                child: const Text(
-                                  'SPIN NOW',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          // Top info card
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Card(
+                              elevation: 4,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: theme.primaryColor.withOpacity(0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.rotate_right,
+                                        color: theme.primaryColor,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Remaining Spins',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          Text(
+                                            '$_remainingSpins / $_maxDailySpins',
+                                            style: TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                              color: _remainingSpins > 0 ? Colors.black : Colors.red,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (_lastWonAmount > 0) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.monetization_on,
+                                              color: Colors.green,
+                                              size: 16,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '+$_lastWonAmount',
+                                              style: const TextStyle(
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ),
                           ),
-                          if (_remainingSpins <= 0) ...[
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 56,
-                              child: OutlinedButton.icon(
-                                onPressed: (_rewardedAd != null && !_isAdLoading) ? _watchAdForSpin : null,
-                                icon: _isAdLoading
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.videocam),
-                                label: const Text('Watch Ad for Extra Spin'),
-                                style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(28),
+                          
+                          // Wheel container
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // Outer decoration
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 20,
+                                          spreadRadius: 5,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                  
+                                  // Wheel
+                                  FortuneWheel(
+                                    selected: _controller.stream,
+                                    animateFirst: false,
+                                    physics: CircularPanPhysics(
+                                      duration: const Duration(seconds: 1, milliseconds: 500),
+                                      curve: Curves.decelerate,
+                                    ),
+                                    onAnimationEnd: () {
+                                      setState(() {
+                                        _isSpinning = false;
+                                      });
+                                    },
+                                    indicators: const [
+                                      FortuneIndicator(
+                                        alignment: Alignment.topCenter,
+                                        child: TriangleIndicator(
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ],
+                                    styleStrategy: UniformStyleStrategy(
+                                      borderColor: Colors.white,
+                                      borderWidth: 3,
+                                      textAlign: TextAlign.center,
+                                      textStyle: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 20,
+                                      ),
+                                    ),
+                                    items: List.generate(_rewards.length, (index) {
+                                      return FortuneItem(
+                                        style: FortuneItemStyle(
+                                          color: _wheelColors[index],
+                                          borderColor: Colors.white,
+                                          borderWidth: 2,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(top: 30.0),
+                                          child: Text(
+                                            '${_rewards[index]}\npts',
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ),
+                                  
+                                  // Center decoration
+                                  Container(
+                                    width: 50,
+                                    height: 50,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 5,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: theme.primaryColor,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.rotate_right,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
+                          
+                          // Buttons
+                          Container(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _spinButtonController,
+                                  builder: (context, child) {
+                                    return Transform.scale(
+                                      scale: _remainingSpins > 0 && !_isSpinning ? _spinButtonAnimation.value : 1.0,
+                                      child: child,
+                                    );
+                                  },
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    height: 56,
+                                    child: ElevatedButton(
+                                      onPressed: _remainingSpins > 0 && !_isSpinning
+                                          ? _spin
+                                          : null,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: theme.primaryColor,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(28),
+                                        ),
+                                        elevation: 5,
+                                      ),
+                                      child: const Text(
+                                        'SPIN NOW',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (_remainingSpins <= 0) ...[
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 56,
+                                    child: OutlinedButton.icon(
+                                      onPressed: (_rewardedAd != null && !_isAdLoading) ? _watchAdForSpin : null,
+                                      icon: _isAdLoading
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : const Icon(Icons.videocam),
+                                      label: const Text('Watch Ad for Extra Spin'),
+                                      style: OutlinedButton.styleFrom(
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(28),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-                
-                // Confetti effect
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: ConfettiWidget(
-                    confettiController: _confettiController,
-                    blastDirection: pi / 2,
-                    maxBlastForce: 5,
-                    minBlastForce: 1,
-                    emissionFrequency: 0.05,
-                    numberOfParticles: 20,
-                    gravity: 0.1,
-                    shouldLoop: false,
-                    colors: const [
-                      Colors.green,
-                      Colors.blue,
-                      Colors.pink,
-                      Colors.orange,
-                      Colors.purple,
-                      Colors.red,
+                      
+                      // Confetti effect
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: ConfettiWidget(
+                          confettiController: _confettiController,
+                          blastDirection: pi / 2,
+                          maxBlastForce: 5,
+                          minBlastForce: 1,
+                          emissionFrequency: 0.05,
+                          numberOfParticles: 20,
+                          gravity: 0.1,
+                          shouldLoop: false,
+                          colors: const [
+                            Colors.green,
+                            Colors.blue,
+                            Colors.pink,
+                            Colors.orange,
+                            Colors.purple,
+                            Colors.red,
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                
+                // Banner ad at the bottom
+                const BannerAdWidget(),
               ],
             ),
     );
