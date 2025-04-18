@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pocket_payout_bd/models/user_model.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
@@ -88,12 +89,7 @@ class FirestoreService {
         case 'spin':
           field = 'dailySpinCount';
           break;
-        case 'quiz':
-          field = 'dailyQuizCount';
-          break;
-        case 'scratch':
-          field = 'dailyScratchCount';
-          break;
+        // Removed quiz and scratch cases
         case 'dice':
           field = 'dailyDiceCount';
           break;
@@ -133,7 +129,7 @@ class FirestoreService {
     try {
       await _usersCollection.doc(uid).update({
         'dailySpinCount': 0,
-        'dailyQuizCount': 0,
+        // Removed dailyQuizCount and dailyScratchCount
         'dailyDiceCount': 0,
         'dailyAdWatchCount': 0,
         'dailyMathPuzzleCount': 0,
@@ -266,28 +262,44 @@ class FirestoreService {
     try {
       debugPrint('FirestoreService: Checking referral code: $referralCode');
       
-      // More direct approach without security concerns
       try {
-        // With our updated security rules, this should work without auth
+        // First attempt - direct query with the updated security rules
         QuerySnapshot snapshot = await _usersCollection
             .where('referralCode', isEqualTo: referralCode)
+            .limit(1)
             .get();
         
         if (snapshot.docs.isNotEmpty) {
-          debugPrint('FirestoreService: Referral code found via query');
-          return snapshot.docs.first.id;
+          String referrerId = snapshot.docs.first.id;
+          debugPrint('FirestoreService: Referral code found, referrer ID: $referrerId');
+          return referrerId;
+        } else {
+          debugPrint('FirestoreService: Referral code not found in Firestore');
+          return null;
         }
       } catch (e) {
-        // If there's an error, try the fallback method of saving a pending referral
-        debugPrint('FirestoreService: Error checking referral code: $e');
-        throw e; // Re-throw to let caller handle fallback
+        // If the first approach fails with permission error, try using the fallback system
+        debugPrint('FirestoreService: Error in primary referral check: $e');
+        
+        try {
+          // Save the referral code to pending_referrals collection 
+          // This collection has more permissive security rules
+          await savePendingReferral(
+            FirebaseAuth.instance.currentUser?.uid ?? 'unknown_user', 
+            referralCode
+          );
+          debugPrint('FirestoreService: Saved to pending referrals for later processing');
+        } catch (savingError) {
+          debugPrint('FirestoreService: Error saving pending referral: $savingError');
+        }
+        
+        // Return null to indicate referral processing will happen later
+        return null;
       }
-      
-      debugPrint('FirestoreService: Referral code not found');
-      return null;
     } catch (e) {
-      debugPrint('Error checking referral code: $e');
-      rethrow;
+      debugPrint('FirestoreService: Unhandled error in checkReferralCode: $e');
+      // Return null instead of rethrowing to prevent app crashes
+      return null;
     }
   }
   
