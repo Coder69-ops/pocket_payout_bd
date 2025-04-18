@@ -25,37 +25,42 @@ service cloud.firestore {
     match /users/{userId} {
       // Allow users to read their own profile or admins to read any profile
       allow get: if isUserAuthenticated(userId) || isAdmin();
-      allow list: if isAdmin();
       
-      // Critical fix: Allow reading referral codes without authentication
-      allow list, get: if request.query.where.referralCode != null;
+      // Allow specific limited queries for referral code validation
+      allow list: if (
+        // For referral code validation queries - allow for ANY authenticated user
+        (request.auth != null && 
+         request.query.filters.size() == 1 &&
+         request.query.filters[0].fieldPath == "referralCode") ||
+        // For leaderboard queries (top users by points)
+        (isAuthenticated() &&
+         request.query.orderBy == 'pointsBalance' &&
+         request.query.limit <= 50) ||
+        // For admin access
+        isAdmin()
+      );
       
-      // Allow leaderboard queries (top users by points)
-      allow list: if isAuthenticated() &&
-                    request.query.orderBy == 'pointsBalance' &&
-                    request.query.limit <= 50;
-                    
-      // Allow users to create their own profile - more permissive since profile completion is automatic
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Allow creation of new users (still requires Firebase Auth)
+      allow create: if isUserAuthenticated(userId);
       
-      // Allow users to update their own profile with simplified field validation
-      allow update: if isUserAuthenticated(userId) && (
-                      // Allow updating basic profile fields
-                      request.resource.data.keys().hasAny(['dailySpinCount', 'dailyQuizCount', 'dailyScratchCount', 
-                                 'dailyDiceCount', 'dailyAdWatchCount', 'lastAdEarnings', 
-                                 'todayAdEarnings', 'lastActivityDate', 'isSignedIn', 
-                                 'phoneNumber', 'displayName', 'photoURL', 'referredBy', 
-                                 'lastUpdatedAt', 'pointsBalance', 'streakCounter', 
-                                 'dailyRewardLastClaimed', 'totalEarned', 'quizHistory',
-                                 'achievements', 'lastLoginAt', 'totalWithdrawn'])
-                    );
+      // Allow users to update their own profiles
+      allow update: if isUserAuthenticated(userId);
 
-      // Special rule for point balance updates - more permissive for game activities and withdrawals
+      // Special rule for point balance updates
       allow update: if isUserAuthenticated(userId) && 
                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pointsBalance', 'totalWithdrawn', 'lastUpdatedAt']);
       
       // Only admins can delete profiles
       allow delete: if isAdmin();
+    }
+    
+    // Pending referrals collection - more permissive
+    match /pending_referrals/{pendingId} {
+      // Allow creating and reading pending referrals for authenticated users
+      allow create, read: if isAuthenticated();
+      
+      // Only admins can update or delete
+      allow update, delete: if isAdmin();
     }
     
     // Transactions collection
@@ -64,23 +69,7 @@ service cloud.firestore {
       allow read: if isUserAuthenticated(resource.data.userId) || isAdmin();
       
       // Allow transaction creation
-      allow create: if isAuthenticated() && (
-                      // User creating their own transaction
-                      request.resource.data.userId == request.auth.uid && 
-                      (
-                        // For earning points from various activities
-                        (request.resource.data.points > 0 && 
-                         request.resource.data.type in ['earn_spin', 'earn_quiz', 'earn_scratch', 
-                                                     'earn_dice', 'earn_ad', 'earn_ad_watch', 'earn_daily_reward',
-                                                     'earn_offer', 'earn_offer_complete', 'earn_referral', 
-                                                     'earn_referral_bonus', 'earn_color_match', 'earn_memory_game',
-                                                     'earn_word_game', 'earn_math_puzzle']) 
-                        || 
-                        // For withdrawal requests (negative points)
-                        (request.resource.data.points < 0 && 
-                         request.resource.data.type in ['withdrawal', 'withdrawal_request'])
-                      )
-                    );
+      allow create: if isUserAuthenticated(resource.data.userId) || isAdmin();
       
       // Only admins can update or delete transactions
       allow update, delete: if isAdmin();
@@ -90,21 +79,15 @@ service cloud.firestore {
     match /withdrawal_requests/{requestId} {
       // Allow users to read their own withdrawal requests and admins to read any
       allow get: if isUserAuthenticated(resource.data.userId) || isAdmin();
+      allow list: if request.auth != null && 
+                   (request.query.where.userId == request.auth.uid || isAdmin());
       
-      // Further simplified list rule to be more permissive - just require authentication
-      allow list: if isAuthenticated();
-      
-      // Completely permissive create rule for withdrawal requests
-      allow create: if isAuthenticated() && 
-                     request.resource.data.userId == request.auth.uid;
+      // Allow users to create withdrawal requests for themselves
+      allow create: if isUserAuthenticated(resource.data.userId);
       
       // Allow users to update only their own pending withdrawal requests
       allow update: if isUserAuthenticated(resource.data.userId) && 
-                     (
-                       (resource.data.status == 'pending' &&
-                        request.resource.data.status == 'cancelled') ||
-                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'processedAt', 'processedById', 'rejectionReason', 'notes']))
-                     );
+                     resource.data.status == 'pending';
                      
       // Only admins can delete withdrawal requests
       allow delete: if isAdmin();
@@ -117,19 +100,6 @@ service cloud.firestore {
       
       // Only admins can modify questions
       allow write: if isAdmin();
-    }
-    
-    // Pending referrals collection - simplified for direct creation without profile completion
-    match /pending_referrals/{pendingId} {
-      // More permissive rule to allow creating pending referrals without authentication
-      allow create: if request.resource.data.keys().hasAll(['userId', 'referralCode']);
-      
-      // Users can read only their own pending referrals
-      allow read: if isAuthenticated() && 
-                    resource.data.userId == request.auth.uid;
-      
-      // Only admins can list all, update status, or delete pending referrals
-      allow list, update, delete: if isAdmin();
     }
     
     // Admin users collection
@@ -150,22 +120,16 @@ service cloud.firestore {
     // Notifications collection
     match /notifications/{notificationId} {
       // Users can read their own notifications
-      allow read: if isAuthenticated() && 
-                   resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated();
       
       // Admins can create global notifications
-      allow create: if isAdmin() && 
-                     (!('userId' in request.resource.data) || 
-                      request.resource.data.userId == null);
+      allow create: if isAdmin() || isAuthenticated();
                       
       // Allow targeted user notifications
-      allow create: if isAdmin() && 
-                     ('userId' in request.resource.data);
+      allow create: if isAdmin() || isAuthenticated();
       
       // Users can mark their notifications as read
-      allow update: if isAuthenticated() && 
-                     resource.data.userId == request.auth.uid &&
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
+      allow update: if isAuthenticated();
       
       // Only admins can delete notifications
       allow delete: if isAdmin();
