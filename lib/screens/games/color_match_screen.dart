@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:pocket_payout_bd/providers/user_provider.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
 import 'package:confetti/confetti.dart';
+import 'package:pocket_payout_bd/widgets/banner_ad_widget.dart';
 
 class ColorMatchScreen extends StatefulWidget {
   const ColorMatchScreen({Key? key}) : super(key: key);
@@ -468,34 +469,44 @@ class _ColorMatchScreenState extends State<ColorMatchScreen> {
         title: const Text('Color Match Game'),
         elevation: 0,
       ),
-      body: Stack(
+      body: Column(
         children: [
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _buildGameContent(),
-          
-          // Confetti effect
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConfettiWidget(
-              confettiController: _confettiController,
-              blastDirection: pi / 2, // straight down
-              maxBlastForce: 5,
-              minBlastForce: 2,
-              emissionFrequency: 0.05,
-              numberOfParticles: 20,
-              gravity: 0.2,
-              shouldLoop: false,
-              colors: const [
-                Colors.green,
-                Colors.blue,
-                Colors.pink,
-                Colors.orange,
-                Colors.purple,
-                Colors.teal,
+          // Main content
+          Expanded(
+            child: Stack(
+              children: [
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildGameContent(),
+                
+                // Confetti effect
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: ConfettiWidget(
+                    confettiController: _confettiController,
+                    blastDirection: pi / 2, // straight down
+                    maxBlastForce: 5,
+                    minBlastForce: 2,
+                    emissionFrequency: 0.05,
+                    numberOfParticles: 20,
+                    gravity: 0.2,
+                    shouldLoop: false,
+                    colors: const [
+                      Colors.green,
+                      Colors.blue,
+                      Colors.pink,
+                      Colors.orange,
+                      Colors.purple,
+                      Colors.teal,
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
+          
+          // Banner ad at the bottom
+          const BannerAdWidget(),
         ],
       ),
     );
@@ -982,4 +993,4 @@ class ColorMatch {
     required this.displayColor,
     required this.correctOption,
   });
-} 
+}
