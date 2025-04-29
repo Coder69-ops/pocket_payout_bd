@@ -8,6 +8,8 @@ import 'package:pocket_payout_bd/utils/firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pocket_payout_bd/utils/constants.dart';
 import 'package:pocket_payout_bd/services/ad_service.dart';
+// Import the auth screen
+import 'package:pocket_payout_bd/screens/auth_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +47,11 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           fontFamily: 'Roboto',
         ),
-        home: const Wrapper(),
+        initialRoute: '/',
+        routes: {
+          '/': (context) => const Wrapper(),
+          '/auth': (context) => const AuthScreen(),
+        },
       ),
     );
   }
