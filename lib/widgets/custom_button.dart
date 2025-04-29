@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class CustomButton extends StatelessWidget {
   final String text;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final Color? buttonColor;
   final Color? textColor;
   final double? width;
@@ -10,7 +10,8 @@ class CustomButton extends StatelessWidget {
   final double? fontSize;
   final bool isOutlined;
   final bool isFullWidth;
-  final IconData? leadingIcon;
+  final IconData? icon;
+  final bool isLoading;
 
   const CustomButton({
     Key? key,
@@ -23,7 +24,8 @@ class CustomButton extends StatelessWidget {
     this.fontSize,
     this.isOutlined = false,
     this.isFullWidth = false,
-    this.leadingIcon,
+    this.icon,
+    this.isLoading = false,
   }) : super(key: key);
 
   @override
@@ -36,9 +38,9 @@ class CustomButton extends StatelessWidget {
       height: height ?? 50.0,
       child: isOutlined
           ? OutlinedButton(
-              onPressed: onPressed,
+              onPressed: isLoading ? null : onPressed,
               style: OutlinedButton.styleFrom(
-                side: BorderSide(color: color),
+                side: BorderSide(color: isLoading ? Colors.grey : color),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12.0),
                 ),
@@ -46,11 +48,11 @@ class CustomButton extends StatelessWidget {
               child: _buildButtonContent(textColor ?? color),
             )
           : ElevatedButton(
-              onPressed: onPressed,
+              onPressed: isLoading ? null : onPressed,
               style: ElevatedButton.styleFrom(
-                backgroundColor: color,
+                backgroundColor: isLoading ? Colors.grey.shade300 : color,
                 foregroundColor: textColor ?? Colors.white,
-                elevation: 2,
+                elevation: isLoading ? 0 : 2,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12.0),
                 ),
@@ -61,11 +63,24 @@ class CustomButton extends StatelessWidget {
   }
 
   Widget _buildButtonContent(Color textColor) {
+    if (isLoading) {
+      return SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.5,
+          valueColor: AlwaysStoppedAnimation<Color>(
+            isOutlined ? textColor : Colors.white,
+          ),
+        ),
+      );
+    }
+    
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (leadingIcon != null) ...[
-          Icon(leadingIcon, color: textColor),
+        if (icon != null) ...[
+          Icon(icon, color: textColor),
           const SizedBox(width: 8),
         ],
         Text(
@@ -79,4 +94,4 @@ class CustomButton extends StatelessWidget {
       ],
     );
   }
-} 
+}

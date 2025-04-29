@@ -89,7 +89,12 @@ class FirestoreService {
         case 'spin':
           field = 'dailySpinCount';
           break;
-        // Removed quiz and scratch cases
+        case 'quiz':
+          field = 'dailyQuizCount';
+          break;
+        case 'scratch':
+          field = 'dailyScratchCount';
+          break;
         case 'dice':
           field = 'dailyDiceCount';
           break;
@@ -129,7 +134,7 @@ class FirestoreService {
     try {
       await _usersCollection.doc(uid).update({
         'dailySpinCount': 0,
-        // Removed dailyQuizCount and dailyScratchCount
+        'dailyQuizCount': 0,
         'dailyDiceCount': 0,
         'dailyAdWatchCount': 0,
         'dailyMathPuzzleCount': 0,
